@@ -35,8 +35,9 @@ class AbstractModel(nn.Module):
         self.n_layers = args.n_layers
         self.model_name = args.model_name
         self.batch_size = args.batch_size
-
+        
         self.init_embedding()
+        
 
     def init_embedding(self):
         self.embed_user = nn.Embedding(self.data.n_users, self.emb_dim)
@@ -44,6 +45,7 @@ class AbstractModel(nn.Module):
 
         nn.init.xavier_normal_(self.embed_user.weight)
         nn.init.xavier_normal_(self.embed_item.weight)
+        
 
     def compute(self):
         users_emb = self.embed_user.weight

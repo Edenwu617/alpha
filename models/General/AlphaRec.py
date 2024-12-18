@@ -67,6 +67,7 @@ class AlphaRec_Data(AbstractData):
             'echo_7b': 'item_cf_embeds_Norm_echo-mistral-7b-instruct-lasttoken_array.npy',
         }
         self.item_cf_embeds = np.load(loading_path + embedding_path_dict[self.lm_model])
+        # (12464,3072)
 
         def group_agg(group_data, embedding_dict, key='item_id'):
             ids = group_data[key].values
@@ -94,7 +95,7 @@ class AlphaRec(AbstractModel):
     def __init__(self, args, data) -> None:
         super().__init__(args, data)
         self.tau = args.tau
-        self.embed_size = args.hidden_size
+        self.embed_size = args.hidden_size # 64
         self.lm_model = args.lm_model
         self.model_version = args.model_version
 
@@ -105,6 +106,19 @@ class AlphaRec(AbstractModel):
         self.init_item_cf_embeds = torch.tensor(self.init_item_cf_embeds, dtype=torch.float32).cuda(self.device)
 
         self.init_embed_shape = self.init_user_cf_embeds.shape[1]
+
+        # SVD
+        _, _, Vh = torch.linalg.svd(self.init_item_cf_embeds, full_matrices=False)
+        self.A = Vh[:, -self.embed_size:]
+        
+        # Semenic: init_item_cf_embeds (N,3072)
+        # CF: self.embed_user (N,64)
+
+        self.init_embedding()
+
+        self.embed_item = self.embed_item.to(self.device)
+        self.embed_user = self.embed_user.to(self.device)
+        
         
         # To keep the same parameter size
         multiplier_dict = {
@@ -132,12 +146,16 @@ class AlphaRec(AbstractModel):
             )
 
     def init_embedding(self):
-        pass
+        self.embed_user = nn.Embedding(self.data.n_users, self.emb_dim)
+        self.embed_item = nn.Embedding(self.data.n_items, self.emb_dim)
+        nn.init.xavier_normal_(self.embed_user.weight)
+        nn.init.xavier_normal_(self.embed_item.weight)
+
 
 
     def compute(self):
-        users_cf_emb = self.mlp(self.init_user_cf_embeds)
-        items_cf_emb = self.mlp(self.init_item_cf_embeds)
+        users_cf_emb = self.mlp(self.embed_user.weight @ self.A.T + self.init_user_cf_embeds)
+        items_cf_emb = self.mlp(self.embed_item.weight @ self.A.T + self.init_item_cf_embeds)
 
         users_emb = users_cf_emb
         items_emb = items_cf_emb
